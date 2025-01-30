@@ -4,14 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MapPin, Search, Navigation2, ChevronRight } from "lucide-react";
 import { useDebounce } from "../../hooks/useDebounce";
+import { PopularCity } from "../../types/location";
 
 
 
 
-interface PopularCity {
-  name: string;
-  state: string;
-}
 
 const POPULAR_CITIES: PopularCity[] = [
   { name: "Kasaragod", state: "Kerala" },
