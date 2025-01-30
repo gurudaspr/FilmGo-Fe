@@ -1,17 +1,14 @@
 
+import { RouterProvider } from 'react-router-dom'
 import './App.css'
-import Navbar from './components/navbar/Navbar'
-import  { CarouselSize  } from './components/slider/Slider'
 import LoginForm from './pages/LoginPage'
+import routes from './routes/Routes'
 
 function App() {
 
   return (
     <>
-    <Navbar/>
-    <div className='mt-20'>
-    <CarouselSize/>
-    </div>
+    <RouterProvider router={routes} />
        <LoginForm/>
     </>
   )

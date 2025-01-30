@@ -1,47 +1,35 @@
-import React, { useState, useEffect } from "react";
-import { Search, MapPin, Navigation2 } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { MapPin, Search, Navigation2, ChevronRight } from "lucide-react";
+import { useDebounce } from "../../hooks/useDebounce";
 
-interface City {
+
+
+
+interface PopularCity {
   name: string;
   state: string;
-  place_id?: string;
-  structured_formatting?: {
-    main_text: string;
-    secondary_text: string;
-  };
 }
 
-const POPULAR_CITIES: City[] = [
-  { name: "Mumbai", state: "Maharashtra" },
-  { name: "Delhi", state: "Delhi" },
-  { name: "Bangalore", state: "Karnataka" },
-  { name: "Hyderabad", state: "Telangana" },
-  { name: "Chennai", state: "Tamil Nadu" },
-  { name: "Kolkata", state: "West Bengal" },
-  { name: "Pune", state: "Maharashtra" },
-  { name: "Ahmedabad", state: "Gujarat" },
-  { name: "Jaipur", state: "Rajasthan" },
+const POPULAR_CITIES: PopularCity[] = [
+  { name: "Kasaragod", state: "Kerala" },
+  { name: "Kochi", state: "Kerala" },
+  { name: "Trivandrum", state: "Kerala" },
 ];
 
-interface LocationSearchProps {
-  selectedLocation: string;
-  setSelectedLocation: (location: string) => void;
-  detectCurrentLocation: () => void;
-}
-
-const Location: React.FC<LocationSearchProps> = ({
-  selectedLocation,
-  setSelectedLocation,
-  detectCurrentLocation,
-}) => {
+const LocationSelector = () => {
+  const [isLocationOpen, setIsLocationOpen] = useState(false);
+  const [selectedLocation, setSelectedLocation] = useState("Kasaragod");
   const [searchQuery, setSearchQuery] = useState("");
-  const [predictions, setPredictions] = useState<City[]>([]);
+  const [currentLocation, setCurrentLocation] = useState<string | null>(null);
+  const [predictions, setPredictions] = useState<google.maps.places.AutocompletePrediction[]>([]);
+  const [autocompleteService, setAutocompleteService] = useState<google.maps.places.AutocompleteService | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [autocompleteService, setAutocompleteService] = useState<any>(null);
 
   const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const debouncedSearchQuery = useDebounce(searchQuery, 500);
 
   useEffect(() => {
     const loadGoogleMapsScript = () => {
@@ -57,36 +45,90 @@ const Location: React.FC<LocationSearchProps> = ({
 
     return () => {
       const script = document.querySelector('script[src*="maps.googleapis.com"]');
-      if (script) {
-        document.head.removeChild(script);
+      if (script && script.parentNode) {
+        script.parentNode.removeChild(script);
       }
     };
   }, []);
 
   const initializeAutocomplete = () => {
-    if (window.google) {
+    if (window.google?.maps) {
       const service = new window.google.maps.places.AutocompleteService();
       setAutocompleteService(service);
     }
   };
 
+  const detectCurrentLocation = () => {
+    if (!window.google?.maps) {
+      console.error("Google Maps not loaded");
+      return;
+    }
+
+    if (navigator.geolocation) {
+      setIsLoading(true);
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const geocoder = new window.google.maps.Geocoder();
+          const latlng = { lat: latitude, lng: longitude };
+
+          geocoder.geocode(
+            { location: latlng },
+            (
+              results: google.maps.GeocoderResult[] | null,
+              status: google.maps.GeocoderStatus
+            ) => {
+              if (status === "OK" && results?.[0]) {
+                const cityComponent = results[0].address_components.find(
+                  (component) => component.types.includes("locality")
+                );
+                if (cityComponent) {
+                  setSelectedLocation(cityComponent.long_name);
+                  setCurrentLocation(cityComponent.long_name);
+                }
+              }
+              setIsLoading(false);
+            }
+          );
+        },
+        (error: GeolocationPositionError) => {
+          console.error("Error getting location:", error);
+          alert("Failed to detect location. Please allow location access.");
+          setIsLoading(false);
+        }
+      );
+    } else {
+      alert("Geolocation is not supported by your browser.");
+    }
+  };
+
+  const handleLocationSelect = (locationName: string) => {
+    setSelectedLocation(locationName);
+    setIsLocationOpen(false);
+  };
+
   useEffect(() => {
     const fetchPredictions = async () => {
-      if (!autocompleteService || !searchQuery) {
+      if (!autocompleteService || !debouncedSearchQuery) {
         setPredictions([]);
         return;
       }
 
       setIsLoading(true);
       try {
+        const request: google.maps.places.AutocompletionRequest = {
+          input: debouncedSearchQuery,
+          types: ["(cities)"],
+          componentRestrictions: { country: "in" },
+        };
+
         autocompleteService.getPlacePredictions(
-          {
-            input: searchQuery,
-            types: ["(cities)"],
-            componentRestrictions: { country: "in" },
-          },
-          (results: any, status: any) => {
-            if (status === window.google.maps.places.PlacesServiceStatus.OK) {
+          request,
+          (
+            results: google.maps.places.AutocompletePrediction[] | null,
+            status: google.maps.places.PlacesServiceStatus
+          ) => {
+            if (status === "OK" && results) {
               setPredictions(results);
             } else {
               setPredictions([]);
@@ -101,62 +143,104 @@ const Location: React.FC<LocationSearchProps> = ({
       }
     };
 
-    const debounceTimer = setTimeout(fetchPredictions, 300);
-    return () => clearTimeout(debounceTimer);
-  }, [searchQuery, autocompleteService]);
+    fetchPredictions();
+  }, [debouncedSearchQuery, autocompleteService]);
 
-  const filteredCities = searchQuery
-    ? predictions
-    : POPULAR_CITIES.filter((city) =>
-        city.name.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+  const filteredCities: (google.maps.places.AutocompletePrediction | PopularCity)[] = 
+    searchQuery ? predictions : POPULAR_CITIES;
 
   return (
-    <div className="relative w-full">
-      <Input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Search for your city"
-        className="pl-10 w-full"
-      />
-      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-
-      <Button
-        variant="outline"
-        className="flex items-center gap-2 mt-2"
-        onClick={detectCurrentLocation}
-        disabled={isLoading}
+    <>
+      <Button 
+        variant="ghost" 
+        size="lg" 
+        className="hidden lg:flex items-center space-x-1" 
+        onClick={() => setIsLocationOpen(true)}
       >
-        <Navigation2 className="h-4 w-4" />
-        Detect my location
+        <MapPin className="h-4 w-4" />
+        <span className="text-base">{selectedLocation}</span>
       </Button>
 
-      <div className="absolute z-50 w-full mt-1 bg-white rounded-md shadow-lg max-h-96 overflow-auto">
-        {isLoading ? (
-          <div className="p-4 text-center text-gray-500">Loading...</div>
-        ) : filteredCities.length > 0 ? (
-          filteredCities.map((city) => (
-            <Button
-              key={city.place_id || city.name}
-              variant="ghost"
-              className="flex flex-col items-start p-4 h-auto"
-              onClick={() => setSelectedLocation(city.name)}
-            >
-              <span className="font-medium">
-                {city.structured_formatting?.main_text || city.name}
-              </span>
-              <span className="text-sm text-gray-500">
-                {city.structured_formatting?.secondary_text || city.state}
-              </span>
-            </Button>
-          ))
-        ) : (
-          <div className="p-4 text-center text-gray-500">No cities found</div>
-        )}
+      <div 
+        className="flex lg:hidden items-center space-x-1 cursor-pointer" 
+        onClick={() => setIsLocationOpen(true)}
+      >
+        <span className="text-sm text-orange-500">{selectedLocation}</span>
+        <ChevronRight className="h-4 w-4 text-orange-500" />
       </div>
-    </div>
+
+      <Dialog open={isLocationOpen} onOpenChange={setIsLocationOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Choose your location</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4 h-96">
+            <div className="flex gap-4">
+              <div className="flex-1 relative">
+                <Input
+                  type="text"
+                  placeholder="Search for your city"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              </div>
+              <Button 
+                variant="outline" 
+                className="flex items-center gap-2" 
+                onClick={detectCurrentLocation} 
+                disabled={isLoading}
+              >
+                <Navigation2 className="h-4 w-4" />
+                <span className="hidden md:inline">Detect my location</span>
+              </Button>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-medium mb-3">
+                {searchQuery ? "Search Results" : "Popular Cities"}
+              </h3>
+              <div className="grid grid-cols-3 gap-4 max-h-[300px] overflow-y-auto">
+                {isLoading ? (
+                  <div className="col-span-3 text-center py-4">Loading...</div>
+                ) : filteredCities.length > 0 ? (
+                  filteredCities.map((city) => (
+                    <Button
+                      key={'place_id' in city ? city.place_id : city.name}
+                      variant="ghost"
+                      className="flex flex-col items-start p-4 h-auto"
+                      onClick={() => 
+                        handleLocationSelect(
+                          'structured_formatting' in city 
+                            ? city.structured_formatting.main_text 
+                            : city.name
+                        )
+                      }
+                    >
+                      <span className="font-medium">
+                        {'structured_formatting' in city 
+                          ? city.structured_formatting.main_text 
+                          : city.name}
+                      </span>
+                      <span className="text-sm text-gray-500">
+                        {'structured_formatting' in city 
+                          ? city.structured_formatting.secondary_text 
+                          : city.state}
+                      </span>
+                    </Button>
+                  ))
+                ) : (
+                  <div className="col-span-3 text-center py-4">No cities found</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
-export default Location;
+export default LocationSelector;

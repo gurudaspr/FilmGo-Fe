@@ -8,8 +8,22 @@ import { Separator } from "@/components/ui/separator";
 import { Phone, Mail, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { auth } from '../config/firebase';
-import { GoogleAuthProvider, signInWithPopup, signInWithEmailAndPassword, RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
+import { 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signInWithEmailAndPassword, 
+  RecaptchaVerifier, 
+  signInWithPhoneNumber,
+  ConfirmationResult 
+} from 'firebase/auth';
 import Google from '../assets/google.png'
+
+// Define window interface extension for recaptchaVerifier
+declare global {
+  interface Window {
+    recaptchaVerifier: RecaptchaVerifier;
+  }
+}
 
 const LoginForm = () => {
   const [email, setEmail] = useState('');
@@ -19,7 +33,7 @@ const LoginForm = () => {
   const [isVerificationSent, setIsVerificationSent] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [confirmationResult, setConfirmationResult] = useState(null);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
 
   const handleGoogleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -36,7 +50,7 @@ const LoginForm = () => {
     }
   };
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleEmailLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     try {
@@ -52,16 +66,16 @@ const LoginForm = () => {
 
   const setupRecaptcha = () => {
     if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new RecaptchaVerifier('recaptcha-container', {
+      window.recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
         size: 'invisible',
-        callback: () => {
-          console.log("Recaptcha verified");
+        callback: (response: any) => {
+          console.log("Recaptcha verified", response);
         },
-      }, auth);
+      });
     }
   };
 
-  const handlePhoneLogin = async (e: React.FormEvent) => {
+  const handlePhoneLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     try {
@@ -72,7 +86,7 @@ const LoginForm = () => {
         setConfirmationResult(confirmation);
         setIsVerificationSent(true);
         console.log("Verification code sent to:", phone);
-      } else {
+      } else if (confirmationResult) {
         const result = await confirmationResult.confirm(verificationCode);
         console.log("Phone login successful:", result.user);
       }
@@ -150,7 +164,7 @@ const LoginForm = () => {
                     required
                   />
                 </div>
-                <Button type="submit" className="w-full  bg-orange-500 hover:bg-orange-600" disabled={loading}>
+                <Button type="submit" className="w-full bg-orange-500 hover:bg-orange-600" disabled={loading}>
                   Sign in with Email
                 </Button>
               </form>
